@@ -1,0 +1,72 @@
+{
+  "type": "FeatureCollection",
+  "coordinate_system": "LOCAL_METERS",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "zone_id": "Z1"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              0,
+              0
+            ],
+            [
+              10,
+              0
+            ],
+            [
+              10,
+              10
+            ],
+            [
+              0,
+              10
+            ],
+            [
+              0,
+              0
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "zone_id": "Z2"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              10,
+              0
+            ],
+            [
+              20,
+              0
+            ],
+            [
+              20,
+              10
+            ],
+            [
+              10,
+              10
+            ],
+            [
+              10,
+              0
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}
