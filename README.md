@@ -2,7 +2,7 @@
 
 将虚构本地平面地块与统计区叠加，生成可查询的空间碎片和覆盖面积指标。
 
-已实现：明确 LOCAL_METERS 坐标、有效 Polygon/MultiPolygon 校验、同层重叠拒绝、区/地块交集、显式未分类几何、面积守恒、按区分类面积、来源哈希、GeoJSON 和 SQLite。另提供可离线的分块入口（`landcover_cube.tiled`），用固定网格缩小几何计算范围，结果业务粒度与全量入口一致。另提供独立连通性脆弱分析入口（`landcover_cube.connectivity`），按统计区为同目标类地块建立共边图并逐宗删除评估剩余最大连通面积。
+已实现：明确 LOCAL_METERS 坐标、有效 Polygon/MultiPolygon 校验、同层重叠拒绝、区/地块交集、显式未分类几何、面积守恒、按区分类面积、来源哈希、GeoJSON 和 SQLite。另提供可离线的分块入口（`landcover_cube.tiled`），用固定网格缩小几何计算范围，结果业务粒度与全量入口一致。另提供独立连通性脆弱分析入口（`landcover_cube.connectivity`），按统计区为同目标类地块建立共边图并逐宗删除评估剩余最大连通面积。另提供离线采集入口（`landcover_cube.acquisition`），由只含节点与无序界线的测绘交接重建现有覆盖入口可直接读取的 `parcels.geojson` 及逐边审计 JSON。
 
 ## 独立安装
 
@@ -26,6 +26,8 @@ python3 -m venv .venv
 .venv/bin/python -m landcover_cube.tiled --tile-size 3 --output run/tiled
 .venv/bin/python -m landcover_cube.tiled --zones data/tiled_zones.geojson --parcels data/tiled_parcels.geojson --tile-size 4 --output run/tiled-demo
 .venv/bin/python -m landcover_cube.connectivity --zones data/connectivity_zones.geojson --parcels data/connectivity_parcels.geojson --class forest --threshold 1 --output run/connectivity/chain.json
+.venv/bin/python -m landcover_cube.acquisition --network data/acquisition_network.json --output run/acquisition
+.venv/bin/python -m landcover_cube --parcels run/acquisition/parcels.geojson --output run/acquisition-coverage
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/python -c 'import sqlite3; db=sqlite3.connect("run/coverage/coverage.sqlite"); print(db.execute("SELECT * FROM zone_summary ORDER BY zone_id").fetchall())'
 ```
@@ -52,6 +54,17 @@ python3 -m venv .venv
 
 共边只是几何结构指标，不保证物种通行或生态功能连通；报告内 `caveat` 明确说明。
 
+## 离线采集入口
+
+`landcover_cube.acquisition` 读取只含节点、无序界线和地块边引用的 `SurveyNetwork` JSON（`type`、`coordinate_system=LOCAL_METERS`、`nodes`、`edges`、`parcels`），重建并发布两个产物：
+
+- `parcels.geojson`：与现有输入同契约的 FeatureCollection（属性恰为 `{parcel_id,class}`），可直接交给 `python -m landcover_cube --parcels ...`。
+- `acquisition_audit.json`：原文 SHA256、节点/边来源位置、逐宗环层级（深度、外壳/孔洞、父环）、每个规范逆时针/顺时环的逐段边 ID、遍历方向与来源节点位置。
+
+节点记录恰为 `{id,x,y}`，边恰为 `{id,a,b}`（`a`/`b` 为节点引用），地块恰为 `{parcel_id,class,edge_ids}`；ID 非空且在各自集合内唯一，引用完整，边至多属两宗，同一宗不重复引用同一边。边是两节点坐标间的直线，不吸附、不补线。每宗边集必须分解为闭环，所用节点度恰为 2；零长、自交、环间相触或穿越、非正面积均拒绝。严格包含深度奇偶决定外壳（偶）、孔洞（奇）与孔中岛（偶、独立成面）；重建结果再经现有 `parse_document` 与同层正面积重叠校验，故共享边界合法、重叠非法。规范环方向、起点与排序后，乱序输入或端点反转不改变 `parcels.geojson`，但审计仍如实记录来源。
+
+demo 数据 `data/acquisition_network.json` 为三层同心正方形（边长 10/6/2，同宗面积 68）加一宗共享外环右边界的 100m² 地块。发布要求目标目录不存在：两产物先写入目标旁的私有暂存目录，全部完成后再重命名发布；失败清理暂存、不留半套，输入字节不变。`tests/test_acquisition.py` 覆盖 68m² 三级环层级、两宗共边、分离多面、断链/自交/相触/穿越拒绝、乱序与端点反转不改变 GeoJSON、失败原子性，以及真实 CLI 产出再接原覆盖入口核对面积。
+
 ## 结构与业务契约
 
 - `landcover_cube/source.py：坐标、属性及同层拓扑约束（包围盒候选筛选 + 精确相交检查）`
@@ -59,10 +72,11 @@ python3 -m venv .venv
 - `landcover_cube/pipeline.py：空间证据和可查询面积数据`
 - `landcover_cube/tiled.py：分块构建、私有 SQLite 暂存、按业务键归并、校验与原子发布`
 - `landcover_cube/connectivity.py：按区共边图、逐宗删除脆弱性与确定性 JSON 报告`
+- `landcover_cube/acquisition.py：测绘节点/无序界线重建宗地、规范环与逐边审计`
 - `docs/contract.md`：完整字段/格式、业务键、边界、输出含义与当前约束。
 - `data/`：小型确定性合成输入和 `PROVENANCE.md`。
 - `tests/`：真实业务值、重复运行、重要边界和失败行为测试。
 
-当前范围：仅自制平面米制坐标；不是 RFC7946 经纬度数据，不声称真实 EPSG、地理面积或自动投影。全量与分块入口均为单进程；无拓扑修复、栅格化、数据库服务、并发执行或中断续传。分块模式沿用 `LOCAL_METERS` 坐标与 GEOS 浮点面积模型，不引入新的空间依赖。
+当前范围：仅自制平面米制坐标；不是 RFC7946 经纬度数据，不声称真实 EPSG、地理面积或自动投影。全量、分块与采集入口均为单进程；无拓扑修复、栅格化、数据库服务、并发执行或中断续传。分块模式与采集入口沿用 `LOCAL_METERS` 坐标与 GEOS 浮点面积模型，不引入新的空间依赖；采集入口不做吸附、补线或面积阈值修复，仅按节点坐标重建直线边。
 
 全部示例为原创合成数据，不代表真实客户、监管标准、实际测量或线上历史。项目没有真实账号、密钥或付费依赖；不包含第三方原始数据。代码及自制数据采用 MIT；依赖保留自身许可。

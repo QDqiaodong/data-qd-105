@@ -19,3 +19,11 @@ hand-constructed synthetic fixtures for the connectivity entry point: one zone
 most damaging single removal. No real land, species or ecological survey data
 is represented.
 
+`acquisition_network.json` is a hand-constructed synthetic `SurveyNetwork` for
+the offline acquisition entry point. It contains 14 nodes and 15 straight edges:
+three concentric squares of side 10, 6 and 2 owned by parcel `P_NEST`
+(woodland, 68 m2 after the hole and island rule), and a parcel `P_EAST` (grass,
+100 m2) that shares the outer square's right boundary edge. It demonstrates
+survey-only topology, a hole with an independent island face and a two-parcel
+shared edge. No real parcel, survey measurement, coordinate system or land
+cover is represented.

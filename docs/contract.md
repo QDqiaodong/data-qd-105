@@ -214,3 +214,94 @@ failure raises/exit-nonzero and leaves any previously existing report at
 flushed and atomically renamed only on success. Only single-writer
 normal/exception safety is claimed.
 
+## Survey acquisition mode
+
+`python -m landcover_cube.acquisition --network N --output O`
+(Python: `landcover_cube.acquisition.acquire(network_path, output)`) turns a
+survey hand-off into the two documents the existing coverage entry already
+reads: `parcels.geojson` (a LOCAL_METERS FeatureCollection with exactly
+`{parcel_id,class}` properties) and `acquisition_audit.json`. The survey
+document is JSON with `type=SurveyNetwork`, `coordinate_system=LOCAL_METERS`,
+and exactly the members `nodes`, `edges`, `parcels`:
+
+- node records: exactly `{id,x,y}`; `id` a nonempty string unique among nodes;
+  `x`/`y` finite numbers with |v|<=10^6.
+- edge records: exactly `{id,a,b}`; `id` unique among edges; `a`/`b` are node
+  IDs that exist and differ. The edge is the straight segment between those two
+  node positions; it is never snapped, split, buffered or supplemented. Two
+  edges may not connect the same unordered node pair, and an edge whose endpoints
+  coincide in coordinates is zero-length.
+- parcel records: exactly `{parcel_id,class,edge_ids}`; `parcel_id` unique among
+  parcels; `class` nonempty; `edge_ids` a nonempty array of existing edge IDs
+  with no repetition inside one parcel. An edge may be referenced by at most two
+  parcels.
+
+The document decoder rejects duplicate JSON object keys and NaN/Infinity
+constants, so the parsed bytes and the audited bytes are unambiguous.
+
+Each parcel's own edge set must decompose into closed loops: every node used by
+that parcel has degree exactly two, every loop uses each of its edges once and
+visits each node once, and every edge is consumed. Loops are (straight-segment)
+rings; each ring must be simple, non-zero-area and a valid polygon. Within a
+parcel, loops may not touch or cross each other. Across parcels the same rules
+apply through the existing same-layer parser: `parcels.geojson` is re-parsed by
+`landcover_cube.source.parse_document` as an ordinary parcel layer and any
+positive-area overlap is rejected, so two parcels may share a boundary (the
+shared edge is referenced by both) but not an area. Faces of one parcel that do
+not share an edge are separate polygons of one MultiPolygon.
+
+Containment uses strict geometric containment depth: the depth of a loop is the
+number of *other* loops of the same parcel whose polygon contains it. Even depth
+0 is an outer shell; odd depth is a hole; even depth >=2 is an island shell
+inside a hole and becomes its own Polygon face. Each even-depth loop becomes one
+face whose holes are its directly contained odd-depth loops (parent = the
+unique loop at depth-1 that contains it). Nested squares of side 10/6/2 inside
+one parcel therefore form a MultiPolygon of two faces with areas 64 and 4, total
+68.
+
+Canonicalisation makes the emitted `parcels.geojson` independent of input
+feature order, edge order, parcel edge-list order and edge endpoint
+orientation: shells are counter-clockwise and holes clockwise (ring orientation
+is fixed from the declared node positions), each ring is rotated to its
+lexicographically smallest coordinate rotation, and faces, parcels and rings are
+ordered deterministically. Only the emitted geometry is invariant; the audit
+truthfully records the source digests and the declared endpoint order.
+
+The audit (`acquisition_audit.json`) contains `schema_version`, `mode=acquisition`,
+`coordinate_system`, the single-read `source_sha256`, input counts, a
+`definitions` object, and:
+
+- `nodes` in ID order with `id`, `x`, `y`, `source_index` (input array position).
+- `edges` in ID order with `id`, `a`, `b`, `length_m`, the sorted
+  `parcel_ids` that reference it, `source_index`.
+- `parcels` in ID order with `parcel_id`, `class`, `source_index`, the declared
+  `edge_ids`, `geometry_type`, `area_m2`, `ring_count`, `face_count`, `rings` and
+  `faces`.
+  Every ring has `ring_index`, `depth`, `role` (`shell`/`hole`),
+  `parent_ring_index` (null for an outer shell), `area_m2`, `node_ids` (canonical
+  traversal) and `segments`. Every segment has `edge_id`, `from_node`,
+  `to_node`, `direction` (`forward` when the canonical traversal matches the
+  declared `a`->`b`, else `reverse`), `edge_source_index`,
+  `from_source_index` and `to_source_index`. Each face lists
+  `shell_ring_index` and `hole_ring_indices`. These records let a reader
+  re-derive every emitted ring and its provenance from the audit alone.
+
+Determinism: identical survey bytes reproduce byte-identical
+`parcels.geojson` and `acquisition_audit.json`. Shuffling node/edge/parcel
+records, reversing edge endpoints or reordering a parcel's edge list leaves
+`parcels.geojson` byte-identical but changes the truthful audit (source hash,
+`source_index`, `direction`). No coordinates are rounded, snapped or repaired.
+
+Publication: the target must not already exist. Both files are written inside a
+private temporary directory next to the target, and that directory is renamed
+into place only after both are complete; failures remove the temporary directory
+and leave no partial target, and input bytes are never modified. The CLI exits
+nonzero on rejection. The emitted `parcels.geojson` is accepted directly by
+`python -m landcover_cube --parcels ...`; the acquisition step itself does not
+compute coverage, and no new dependency is introduced beyond the pinned
+Shapely/NumPy stack.
+
+The bundled `data/acquisition_network.json` is a synthetic fixture: three
+concentric squares (side 10, 6, 2) owned by parcel `P_NEST` (area 68), plus a
+`P_EAST` square sharing the outer parcel's right boundary (area 100). No real
+survey, parcel or coordinate system is represented.
