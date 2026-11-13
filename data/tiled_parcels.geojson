@@ -1,0 +1,44 @@
+{
+  "type": "FeatureCollection",
+  "coordinate_system": "LOCAL_METERS",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "parcel_id": "TP",
+        "class": "woodland"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-5, -5],
+            [5, -5],
+            [5, 5],
+            [-5, 5],
+            [-5, -5]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "parcel_id": "TQ",
+        "class": "grass"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [5, -5],
+            [10, -5],
+            [10, 5],
+            [5, 5],
+            [5, -5]
+          ]
+        ]
+      }
+    }
+  ]
+}

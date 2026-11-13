@@ -3,15 +3,16 @@ import hashlib
 import json
 import sqlite3
 from pathlib import Path
-from .source import load
+from .source import load_input
 from .overlay import overlay
 
 
 def run(zones_path,parcels_path,output):
-    zones,parcels=load(zones_path,"zone"),load(parcels_path,"parcel")
+    zone_bytes,zones,_=load_input(zones_path,"zone",indexed=False)
+    parcel_bytes,parcels,_=load_input(parcels_path,"parcel",indexed=False)
     fragments,summaries=overlay(zones,parcels)
     report={"schema_version":1,"coordinate_system":"LOCAL_METERS","zones":summaries,"fragment_count":len(fragments),
-            "input_sha256":{name:hashlib.sha256(Path(path).read_bytes()).hexdigest() for name,path in [("zones",zones_path),("parcels",parcels_path)]}}
+            "input_sha256":{"zones":hashlib.sha256(zone_bytes).hexdigest(),"parcels":hashlib.sha256(parcel_bytes).hexdigest()}}
     output=Path(output);output.mkdir(parents=True,exist_ok=True)
     with sqlite3.connect(output/"coverage.sqlite") as db:
         db.executescript("""CREATE TABLE IF NOT EXISTS fragments(fragment_id INTEGER PRIMARY KEY,zone_id TEXT,parcel_id TEXT,class TEXT,area_m2 REAL,coverage_kind TEXT,geometry_json TEXT);
