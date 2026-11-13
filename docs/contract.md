@@ -151,3 +151,66 @@ slivers are never deleted, such a sliver is reported (usually far below 1e-8
 m2) rather than silently absorbed; this is within the stated area tolerances
 and is an acknowledged GEOS/float limitation, not a repair step.
 
+## Connectivity vulnerability mode
+
+`python -m landcover_cube.connectivity --zones Z --parcels P --class C
+--threshold T --output O`
+(Python: `landcover_cube.connectivity.connectivity(zones_path, parcels_path,
+target_class, shared_edge_threshold, output)`) is an independent analysis that
+reads the same two FeatureCollections and applies the same whole-input
+validity, identity, ring, Polygon/MultiPolygon and same-layer positive-area
+overlap contract as the overlay entries. Both inputs are fully validated before
+any computation or output. `--class`/`--target-class` selects the class string
+(an ordinary class string, including a real class literally named
+`unclassified`); `--threshold`/`--shared-edge-threshold` is a positive finite
+decimal number of meters, rejecting booleans, NaN/Infinity, `+`-separated
+junk, underscores, spaces and empty text. `--output` names one JSON report
+file (default `run/connectivity/connectivity.json`); an existing directory at
+that path is rejected. It uses only the pinned Shapely/NumPy stack and does not
+change the baseline or tiled entry points.
+
+Per zone, each target-class parcel is clipped to the zone; every positive-area
+Polygon component of the clip is one node with canonicalized geometry (holes
+kept). Components of the same parcel, and nodes of different zones, are
+separate nodes and are never connected implicitly. A shared-boundary candidate
+pair is linked only if the union of LineString pieces in the intersection of
+the two node boundaries has total length >= the threshold. Boundary
+intersections are reduced to line parts, so a point-only contact has zero
+shared-edge length and never creates an edge; a hole boundary is a real
+boundary. The reported `shared_boundary_length_m` is the GEOS float length and
+the threshold comparison uses its shortest round-trip decimal text, so equality
+connects and the decision can be re-derived from the encoded geometry.
+
+Each zone's baseline components and their areas are computed from the retained
+edges. Vulnerability removes all nodes of one parcel in that zone
+simultaneously, recomputes the remaining components from the remaining edges,
+and reports remaining component members/areas, the largest remaining component
+and `absolute_loss_m2` = baseline maximum - remaining maximum (0 when either
+is empty). `relative_loss` = absolute loss / baseline maximum (0 when the
+baseline maximum is 0). Entries are ranked per zone by relative loss
+descending, then parcel_id ascending, and numbered from 1. A zone with no
+target-class nodes reports zero nodes, zero edges, baseline maximum 0, no
+components and an empty vulnerability list.
+
+The report contains `schema_version`, `mode=connectivity`,
+`coordinate_system=LOCAL_METERS`, `target_class`, canonical
+`shared_edge_threshold_m` text, both `input_sha256` digests, input feature
+counts, a `definitions` object, a `caveat` string, and per zone: stable node
+records (`node_id`, parcel, class, component index, area, canonical GeoJSON),
+edges with both node IDs and the canonical shared-boundary geometry, baseline
+components, and the vulnerability ranking. Node IDs are length-prefixed
+`<zone_id>|<parcel_id>|<component_index>` tuples that remain unambiguous when
+IDs contain `|`. Geometry is GEOS-normalized without rounding or snapping.
+
+Geometric edge contact is only a landscape-structure indicator: a shared edge
+does not imply species passage, habitat quality or functional connectivity;
+the report states this caveat.
+
+Determinism and failure behavior: identical input bytes and arguments produce
+byte-identical report JSON, and reordering input features changes only the
+input digest. Invalid input, an invalid class or threshold, or a report-writing
+failure raises/exit-nonzero and leaves any previously existing report at
+`--output` intact; the new report is written to a temporary sibling file,
+flushed and atomically renamed only on success. Only single-writer
+normal/exception safety is claimed.
+

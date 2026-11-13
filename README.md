@@ -2,7 +2,7 @@
 
 将虚构本地平面地块与统计区叠加，生成可查询的空间碎片和覆盖面积指标。
 
-已实现：明确 LOCAL_METERS 坐标、有效 Polygon/MultiPolygon 校验、同层重叠拒绝、区/地块交集、显式未分类几何、面积守恒、按区分类面积、来源哈希、GeoJSON 和 SQLite。另提供可离线的分块入口（`landcover_cube.tiled`），用固定网格缩小几何计算范围，结果业务粒度与全量入口一致。
+已实现：明确 LOCAL_METERS 坐标、有效 Polygon/MultiPolygon 校验、同层重叠拒绝、区/地块交集、显式未分类几何、面积守恒、按区分类面积、来源哈希、GeoJSON 和 SQLite。另提供可离线的分块入口（`landcover_cube.tiled`），用固定网格缩小几何计算范围，结果业务粒度与全量入口一致。另提供独立连通性脆弱分析入口（`landcover_cube.connectivity`），按统计区为同目标类地块建立共边图并逐宗删除评估剩余最大连通面积。
 
 ## 独立安装
 
@@ -25,6 +25,7 @@ python3 -m venv .venv
 .venv/bin/python -m landcover_cube --output run/replay
 .venv/bin/python -m landcover_cube.tiled --tile-size 3 --output run/tiled
 .venv/bin/python -m landcover_cube.tiled --zones data/tiled_zones.geojson --parcels data/tiled_parcels.geojson --tile-size 4 --output run/tiled-demo
+.venv/bin/python -m landcover_cube.connectivity --zones data/connectivity_zones.geojson --parcels data/connectivity_parcels.geojson --class forest --threshold 1 --output run/connectivity/chain.json
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/python -c 'import sqlite3; db=sqlite3.connect("run/coverage/coverage.sqlite"); print(db.execute("SELECT * FROM zone_summary ORDER BY zone_id").fetchall())'
 ```
@@ -39,12 +40,25 @@ python3 -m venv .venv
 
 相同输入重放得到一致 JSON；允许同路径全量重算。输入契约失败在创建新报告前报错，已有报告不会因此被伪装为新结果。运行 SQLite 与报告均在忽略的 `run/` 内。
 
+## 连通性脆弱分析
+
+`landcover_cube.connectivity` 读取与覆盖入口相同的两个 FeatureCollection，并先整体校验全部输入（含未被选中类的地块）。用语：
+```sh
+.venv/bin/python -m landcover_cube.connectivity --zones data/connectivity_zones.geojson --parcels data/connectivity_parcels.geojson --class forest --threshold 1 --output run/connectivity/chain.json
+```
+`--class`（别名 `--target-class`）为目标类字符串；`--threshold`（别名 `--shared-edge-threshold`）为严格大于 0 的有限十进制米数，拒绝布尔、NaN/Infinity 和畸形文本；`--output` 是单个 JSON 报告文件。
+
+每个统计区各自成图：目标类地块先裁剪到该区，每个正面积 Polygon 分量独立成节点并保留孔洞；同一地块的多个分量不会暗中相连。仅当两节点边界交线的 LineString 部分并集总长 ≥ 阈值时才连边；点接触长度为 0，不连边。逐宗同时删除该区内该地块的全部节点，重新计算剩余连通分量，输出成员/面积、剩余最大组件面积、绝对损失与相对基线损失，按损失降序、parcel_id 升序排名；空图最大面积为 0。报告含规范化节点几何、逐边共边依据及两输入 SHA256，可据此独立重算。合成示例 `data/connectivity_zones.geojson` / `data/connectivity_parcels.geojson` 为 A-B-C 三个 1m×1m 正方形：阈值 1 时删除 B 后最大面积 1、绝对损失 2，B 排名第一。`tests/test_connectivity.py` 覆盖该链、环、多分量整宗删除、孔洞共边、点接触、阈值边界、全量校验、失败保留旧报告、确定性与 CLI。
+
+共边只是几何结构指标，不保证物种通行或生态功能连通；报告内 `caveat` 明确说明。
+
 ## 结构与业务契约
 
 - `landcover_cube/source.py：坐标、属性及同层拓扑约束（包围盒候选筛选 + 精确相交检查）`
 - `landcover_cube/overlay.py：相交/差集、碎片与守恒`
 - `landcover_cube/pipeline.py：空间证据和可查询面积数据`
 - `landcover_cube/tiled.py：分块构建、私有 SQLite 暂存、按业务键归并、校验与原子发布`
+- `landcover_cube/connectivity.py：按区共边图、逐宗删除脆弱性与确定性 JSON 报告`
 - `docs/contract.md`：完整字段/格式、业务键、边界、输出含义与当前约束。
 - `data/`：小型确定性合成输入和 `PROVENANCE.md`。
 - `tests/`：真实业务值、重复运行、重要边界和失败行为测试。

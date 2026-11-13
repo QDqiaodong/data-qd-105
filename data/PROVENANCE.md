@@ -12,3 +12,10 @@ fixtures for the tiled entry point: one zone `[-5,15]x[-5,5]`, the parcel `TP`
 demonstrate negative coordinates, grid-unaligned boundaries and explicit
 uncovered area; no real land data is involved.
 
+`connectivity_zones.geojson` and `connectivity_parcels.geojson` are
+hand-constructed synthetic fixtures for the connectivity entry point: one zone
+`[0,3]x[0,1]` and three `forest` parcels A, B and C, each the unit square
+`[k,k+1]x[0,1]`. They demonstrate the A-B-C chain whose middle parcel is the
+most damaging single removal. No real land, species or ecological survey data
+is represented.
+

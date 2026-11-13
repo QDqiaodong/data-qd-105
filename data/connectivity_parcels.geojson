@@ -1,0 +1,63 @@
+{
+  "type": "FeatureCollection",
+  "coordinate_system": "LOCAL_METERS",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "parcel_id": "A",
+        "class": "forest"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [0, 0],
+            [1, 0],
+            [1, 1],
+            [0, 1],
+            [0, 0]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "parcel_id": "B",
+        "class": "forest"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [1, 0],
+            [2, 0],
+            [2, 1],
+            [1, 1],
+            [1, 0]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "parcel_id": "C",
+        "class": "forest"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [2, 0],
+            [3, 0],
+            [3, 1],
+            [2, 1],
+            [2, 0]
+          ]
+        ]
+      }
+    }
+  ]
+}
