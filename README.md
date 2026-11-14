@@ -2,7 +2,7 @@
 
 将虚构本地平面地块与统计区叠加，生成可查询的空间碎片和覆盖面积指标。
 
-已实现：明确 LOCAL_METERS 坐标、有效 Polygon/MultiPolygon 校验、同层重叠拒绝、区/地块交集、显式未分类几何、面积守恒、按区分类面积、来源哈希、GeoJSON 和 SQLite。另提供可离线的分块入口（`landcover_cube.tiled`），用固定网格缩小几何计算范围，结果业务粒度与全量入口一致。另提供独立连通性脆弱分析入口（`landcover_cube.connectivity`），按统计区为同目标类地块建立共边图并逐宗删除评估剩余最大连通面积。另提供离线采集入口（`landcover_cube.acquisition`），由只含节点与无序界线的测绘交接重建现有覆盖入口可直接读取的 `parcels.geojson` 及逐边审计 JSON。
+已实现：明确 LOCAL_METERS 坐标、有效 Polygon/MultiPolygon 校验、同层重叠拒绝、区/地块交集、显式未分类几何、面积守恒、按区分类面积、来源哈希、GeoJSON 和 SQLite。另提供可离线的分块入口（`landcover_cube.tiled`），用固定网格缩小几何计算范围，结果业务粒度与全量入口一致。另提供独立连通性脆弱分析入口（`landcover_cube.connectivity`），按统计区为同目标类地块建立共边图并逐宗删除评估剩余最大连通面积。另提供离线采集入口（`landcover_cube.acquisition`），由只含节点与无序界线的测绘交接重建现有覆盖入口可直接读取的 `parcels.geojson` 及逐边审计 JSON。另提供两期覆盖转移入口（`landcover_cube.transition`），接收同一统计区与前后两期地块，按空间叠加生成转移 GeoJSON、面积矩阵 JSON 和 SQLite。
 
 ## 独立安装
 
@@ -55,6 +55,7 @@ python3 -I release-bundle/offline_release/__main__.py install release-bundle \
 .venv/bin/python -m landcover_cube.connectivity --zones data/connectivity_zones.geojson --parcels data/connectivity_parcels.geojson --class forest --threshold 1 --output run/connectivity/chain.json
 .venv/bin/python -m landcover_cube.acquisition --network data/acquisition_network.json --output run/acquisition
 .venv/bin/python -m landcover_cube --parcels run/acquisition/parcels.geojson --output run/acquisition-coverage
+.venv/bin/python -m landcover_cube.transition --output run/transition
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/python -c 'import sqlite3; db=sqlite3.connect("run/coverage/coverage.sqlite"); print(db.execute("SELECT * FROM zone_summary ORDER BY zone_id").fetchall())'
 ```
@@ -92,6 +93,16 @@ python3 -I release-bundle/offline_release/__main__.py install release-bundle \
 
 demo 数据 `data/acquisition_network.json` 为三层同心正方形（边长 10/6/2，同宗面积 68）加一宗共享外环右边界的 100m² 地块。发布要求目标目录不存在：两产物先写入目标旁的私有暂存目录，全部完成后再重命名发布；失败清理暂存、不留半套，输入字节不变。`tests/test_acquisition.py` 覆盖 68m² 三级环层级、两宗共边、分离多面、断链/自交/相触/穿越拒绝、乱序与端点反转不改变 GeoJSON、失败原子性，以及真实 CLI 产出再接原覆盖入口核对面积。
 
+## 两期覆盖转移
+
+`landcover_cube.transition` 接收同一统计区与前后两期地块（三份输入均先按旧契约全量校验），按空间叠加计算转移，不按跨期地块 ID 配对。每区把一期内同类裁剪面积并成 (coverage_kind, class) 类目，未覆盖为 (`unclassified`, null) 空类；真实名为 `unclassified` 的类保持 classified，绝不与空类混入。转移事实是前后类目几何的正面积交集，按 `(zone_id, 前期类目, 后期类目)` 归并为单个 Polygon/MultiPolygon，保留孔洞与分离分量；未变组合（如 forest→forest）是普通单元，边界接触零面积不产生事实。
+
+```sh
+.venv/bin/python -m landcover_cube.transition --zones data/transition_zones.geojson --before data/transition_parcels_before.geojson --after data/transition_parcels_after.geojson --output run/transition
+```
+
+每区矩阵行为前期类目、列为后期类目；行和等于前期分类及未覆盖面积，列和等于后期，总和沿用 rel 1e-9 / abs 1e-8 容差守恒；两期互换得到转置矩阵且事实几何不变。三个产物 `transitions.geojson`、`matrix.json`、`transitions.sqlite` 来自同一批归并事实并逐键一致，均含三输入 SHA256（zones、parcels_before、parcels_after）。目标目录必须不存在：全部文件在目标旁私有暂存目录写好并关闭数据库后才重命名发布；任一期非法或写入失败不留半套、不改动输入。合成示例为 100m² 矩形：前期左 60 林、右 40 空，后期左 40 林、右 60 草，转移为 林→林 40、林→草 20、空→草 40。`tests/test_transition.py` 覆盖该矩形位置与矩阵、地块拆并换 ID、孔洞、多面、空期、边界接触、同名类、两期互换转置、重放确定性、失败原子性与真实 CLI。
+
 ## 结构与业务契约
 
 - `landcover_cube/source.py：坐标、属性及同层拓扑约束（包围盒候选筛选 + 精确相交检查）`
@@ -100,6 +111,7 @@ demo 数据 `data/acquisition_network.json` 为三层同心正方形（边长 10
 - `landcover_cube/tiled.py：分块构建、私有 SQLite 暂存、按业务键归并、校验与原子发布`
 - `landcover_cube/connectivity.py：按区共边图、逐宗删除脆弱性与确定性 JSON 报告`
 - `landcover_cube/acquisition.py：测绘节点/无序界线重建宗地、规范环与逐边审计`
+- `landcover_cube/transition.py：两期覆盖转移几何、面积矩阵、SQLite 与原子发布`
 - `offline_release/：纯标准库离线发布 CLI（pack/verify/install），见 docs/offline_release.md`
 - `scripts/build_offline_bundle.sh：联网预备机一键制包脚本`
 - `docs/contract.md`：完整字段/格式、业务键、边界、输出含义与当前约束。

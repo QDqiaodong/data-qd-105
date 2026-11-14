@@ -305,3 +305,76 @@ The bundled `data/acquisition_network.json` is a synthetic fixture: three
 concentric squares (side 10, 6, 2) owned by parcel `P_NEST` (area 68), plus a
 `P_EAST` square sharing the outer parcel's right boundary (area 100). No real
 survey, parcel or coordinate system is represented.
+
+## Two-period transition matrix mode
+
+`python -m landcover_cube.transition --zones Z --before B --after A --output O`
+(Python: `landcover_cube.transition.transition(zones_path, before_path,
+after_path, output)`) overlays one shared zone FeatureCollection with a
+before-period and an after-period parcel FeatureCollection. All three inputs
+are fully validated under the same validity, identity, ring,
+Polygon/MultiPolygon and same-layer positive-area-overlap contract as the
+overlay entries; the whole of both parcel inputs is validated, including
+parcels outside every zone. Zones must be nonempty; either parcel collection
+may be empty (an empty period). The computation is purely spatial: parcel
+identities are never paired across periods, so split or merged parcels with
+new IDs are handled exactly like any other geometry.
+
+Per zone and period, all clipped parcel area of one class is unioned into one
+(`classified`, class) category geometry and all uncovered zone area is the
+single (`unclassified`, null) category; a real class literally named
+`unclassified` stays a classified category and is never mixed with the
+null-class uncovered category. A transition fact is the positive-area
+intersection of one before category with one after category, merged into one
+Polygon/MultiPolygon per `(zone_id, before category, after category)`
+combination; holes and disconnected components are retained, and unchanged
+combinations (the same class in both periods) are ordinary cells. No
+snapping, simplification, buffering or area threshold is applied; boundary
+contact contributes zero area and produces no fact.
+
+Per zone the matrix rows are the before-period categories and the columns the
+after-period categories, both ordered by (coverage_kind, class) with
+classified first. `areas_m2` is dense: combinations without positive-area
+geometry are 0 and have no transition fact. `row_totals_m2` equal the
+before-period category areas (classified by class plus uncovered) and
+`column_totals_m2` the after-period ones; `total_m2` conserves the zone area
+within the baseline rel_tol=1e-9 / abs_tol=1e-8 m2. Swapping the two periods
+transposes the matrix and preserves every fact geometry. Beyond the numeric
+totals, the union of a zone's facts is compared with the zone geometry by
+symmetric difference and facts are checked for positive-area overlap, both
+within max(1e-8, 1e-9*zone_area_m2), so equal area in the wrong location
+fails. `transition_id` is a stable 1-based order over (zone_id, before
+category, after category); only positive-area facts receive an ID.
+
+The new target directory must not pre-exist and contains
+`transitions.geojson`, `matrix.json` and `transitions.sqlite`, all built from
+the same merged facts and all carrying the three input SHA256 digests
+(`zones`, `parcels_before`, `parcels_after`): in `matrix.json` as
+`input_sha256`, in the GeoJSON as a same-named foreign member, and in the
+SQLite `input_hashes` table. GeoJSON features keep LOCAL_METERS and carry
+`transition_id`, `zone_id`, both coverage kinds and classes, and `area_m2`
+as properties. `matrix.json` adds `mode=transition`, feature counts,
+definitions and the per-zone matrices. SQLite (not SpatiaLite; geometry is
+JSON text) has `transitions` (one row per fact, geometry_json text),
+`matrix_cells` (the dense matrix including zero cells), `zone_summary`
+(per-period classified/unclassified areas and the conserved total) and
+`input_hashes`. The database commits before the JSON files are written.
+
+Determinism: identical input bytes reproduce byte-identical JSON and GeoJSON
+and logically identical SQLite business content; reordering input features
+changes only the truthful source digests. Failure atomicity: inputs are
+validated before any target is published; all files are written and the
+database closed inside a private temporary directory next to the target,
+which is renamed into place only when complete. An existing target is
+refused and never overwritten; invalid input or a write failure leaves no
+partial official target, cleans this run's temporary directory and never
+modifies the inputs. Only single-writer normal/exception safety is claimed.
+
+The bundled `data/transition_zones.geojson`,
+`data/transition_parcels_before.geojson` and
+`data/transition_parcels_after.geojson` are a synthetic 100 m2 rectangle
+(zone `TZ` `[0,10]x[0,10]`): before, forest `[0,6]x[0,10]` (60 m2) with the
+right 40 m2 uncovered; after, forest `[0,4]x[0,10]` (40 m2) and grass
+`[4,10]x[0,10]` (60 m2). The transitions are forest->forest 40 m2
+(`[0,4]x[0,10]`), forest->grass 20 m2 (`[4,6]x[0,10]`) and
+uncovered->grass 40 m2 (`[6,10]x[0,10]`).

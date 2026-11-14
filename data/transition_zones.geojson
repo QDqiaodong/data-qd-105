@@ -1,0 +1,39 @@
+{
+  "type": "FeatureCollection",
+  "coordinate_system": "LOCAL_METERS",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "zone_id": "TZ"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              0,
+              0
+            ],
+            [
+              10,
+              0
+            ],
+            [
+              10,
+              10
+            ],
+            [
+              0,
+              10
+            ],
+            [
+              0,
+              0
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

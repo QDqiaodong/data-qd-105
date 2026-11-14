@@ -27,3 +27,12 @@ three concentric squares of side 10, 6 and 2 owned by parcel `P_NEST`
 survey-only topology, a hole with an independent island face and a two-parcel
 shared edge. No real parcel, survey measurement, coordinate system or land
 cover is represented.
+
+`transition_zones.geojson`, `transition_parcels_before.geojson` and
+`transition_parcels_after.geojson` are hand-constructed synthetic fixtures for
+the two-period transition entry point: one 100 m2 zone `TZ` `[0,10]x[0,10]`;
+before, parcel `B1` (forest) `[0,6]x[0,10]` with the right 40 m2 uncovered;
+after, parcel `A1` (forest) `[0,4]x[0,10]` and parcel `A2` (grass)
+`[4,10]x[0,10]`. They demonstrate forest->forest 40 m2, forest->grass 20 m2
+and uncovered->grass 40 m2 with deliberately different parcel IDs across
+periods. No real land data is involved.
