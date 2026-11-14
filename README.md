@@ -16,6 +16,33 @@ python3 -m venv .venv
 
 首次安装可能需要联网；安装后核心演示与测试可离线运行。每仓独立 `.venv`，不使用其他项目源代码或环境。macOS/Linux 使用相同命令；具体已验证环境不由此声明。
 
+## 独立离线发布（无网工作站）
+
+`offline_release/` 是纯标准库的离线发布 CLI（`pack`/`verify`/`install`），在没有 pip、没有第三方包的目标解释器上也能运行。发布包在打包时绑定**同一 CPython 小版本、操作系统与架构**（Linux 另绑定 glibc/musl），wheel 标签、`METADATA`、`RECORD`、pyproject 与锁文件全部交叉核验；缺包、多版本、源码包、损坏 wheel、目标不兼容均拒绝。受管路径拒绝符号链接与目录逃逸。安装时 `venv --without-pip` 建隔离环境，用包内 pip wheel 自举，全程 `--no-index --only-binary=:all:`（禁网络、禁源码构建、禁系统包），并自动烟测四类 CLI；安装或烟测失败只清理本次环境，旧环境与发布包保留。完整契约见 `docs/offline_release.md`。
+
+联网预备机一条命令制包（产物全部在独立 work 目录，不夹带既有环境或仓库目录）：
+
+```sh
+scripts/build_offline_bundle.sh ./build-work ./build-work/release-bundle
+# 等价手工步骤：
+python3 -m venv ./build-work/venv && ./build-work/venv/bin/python -m pip install -r requirements-build.lock
+./build-work/venv/bin/python -m pip download --only-binary=:all: -r requirements.lock -d ./build-work/wheel-staging
+./build-work/venv/bin/python -m pip download --only-binary=:all: "pip==24.3.1" -d ./build-work/wheel-staging
+./build-work/venv/bin/python -m pip wheel --no-deps --no-build-isolation --wheel-dir ./build-work/wheel-staging .
+mkdir -p ./build-work/inputs-stage && cp data/*.json data/*.geojson ./build-work/inputs-stage/
+python3 -I offline_release/__main__.py pack --wheel-dir ./build-work/wheel-staging \
+  --input-dir ./build-work/inputs-stage --pyproject pyproject.toml \
+  --requirements-lock requirements.lock --output ./build-work/release-bundle
+```
+
+断网目标机（解释器无需自带 pip）：
+
+```sh
+python3 -I release-bundle/offline_release/__main__.py verify release-bundle
+python3 -I release-bundle/offline_release/__main__.py install release-bundle \
+  --python /usr/bin/python3 --env-dir /opt/landcover-venv
+```
+
 ## 演示、输出与测试
 
 在仓库根目录执行。首次 `run/` 不存在即为干净数据状态；需要干净重演可指定新的输出路径。
@@ -73,6 +100,8 @@ demo 数据 `data/acquisition_network.json` 为三层同心正方形（边长 10
 - `landcover_cube/tiled.py：分块构建、私有 SQLite 暂存、按业务键归并、校验与原子发布`
 - `landcover_cube/connectivity.py：按区共边图、逐宗删除脆弱性与确定性 JSON 报告`
 - `landcover_cube/acquisition.py：测绘节点/无序界线重建宗地、规范环与逐边审计`
+- `offline_release/：纯标准库离线发布 CLI（pack/verify/install），见 docs/offline_release.md`
+- `scripts/build_offline_bundle.sh：联网预备机一键制包脚本`
 - `docs/contract.md`：完整字段/格式、业务键、边界、输出含义与当前约束。
 - `data/`：小型确定性合成输入和 `PROVENANCE.md`。
 - `tests/`：真实业务值、重复运行、重要边界和失败行为测试。
